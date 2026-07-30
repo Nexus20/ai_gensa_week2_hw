@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getData } from '../api/client';
-import { formatTimestamp, severityColor } from '../utils';
+import { formatTimestamp, severityColor } from '../domain/formatting';
 import type { IncidentsResponse, Incident } from '../api/types';
 import { RETRY_MAX_ATTEMPTS, RETRY_DELAY_MS } from '../config';
 

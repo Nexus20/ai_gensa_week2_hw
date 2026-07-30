@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import { getData } from '../api/client';
-import type { Station, TelemetryResponse, CrewResponse, IncidentsResponse, Incident } from '../api/types';
+import type { Station, TelemetryResponse, CrewResponse, IncidentsResponse } from '../api/types';
+import { computeStationStatus } from '../domain/station';
+import { computeO2Trend, computePowerTrend, computePowerBudget } from '../domain/telemetry';
+import { splitByDuty, countByShift, computeAvgSleep } from '../domain/crew';
+import { countBySeverity, findMostUrgent } from '../domain/incidents';
 import {
   POLL_INTERVAL_MS,
   O2_CRITICAL,
   O2_DEGRADED,
-  POWER_DEGRADED_KW,
   POWER_BUDGET_MAX_KW,
   POWER_BUDGET_BAD_PCT,
   POWER_BUDGET_WARN_PCT,
@@ -17,9 +20,6 @@ import {
   SLEEP_WARN_H,
   RESUPPLY_CRITICAL_DAYS,
   RESUPPLY_WARN_DAYS,
-  TREND_O2_DELTA,
-  TREND_POWER_DELTA,
-  TREND_BACK_SAMPLES,
   COLOR_CRITICAL,
   COLOR_DEGRADED,
   COLOR_NOMINAL,
@@ -99,7 +99,7 @@ export default function Dashboard() {
     return null;
   }
 
-  // ---- inline status computation -------------------------------------------
+  // ---- computed values via domain logic -------------------------------------
   const o2Points = telemetry.series.o2.points;
   const powerPoints = telemetry.series.power.points;
   const hullTempPoints = telemetry.series.hullTemp.points;
@@ -109,55 +109,27 @@ export default function Dashboard() {
   const latestHullTemp = hullTempPoints[hullTempPoints.length - 1];
   const latestIntegrity = integrityPoints[integrityPoints.length - 1];
 
-  let unresolvedCritical = 0;
-  let unresolvedWarning = 0;
+  const incidentCounts = countBySeverity(incidents.items);
+  const unresolvedCritical = incidentCounts.critical;
+  const unresolvedWarning = incidentCounts.warning;
+
   let resolvedToday = 0;
   for (let i = 0; i < incidents.items.length; i++) {
-    const inc = incidents.items[i];
-    if (!inc.resolved && inc.severity === 'critical') {
-      unresolvedCritical++;
-    } else if (!inc.resolved && inc.severity === 'warning') {
-      unresolvedWarning++;
-    } else if (inc.resolved && inc.timestamp.indexOf('2036-07-11') === 0) {
+    if (incidents.items[i].resolved && incidents.items[i].timestamp.indexOf('2036-07-11') === 0) {
       resolvedToday++;
     }
   }
 
-  // NOTE: mission control wall display uses O2_CRITICAL as the O2 floor
-  let status = 'NOMINAL';
-  let statusColor = COLOR_NOMINAL;
-  if (latestO2 < O2_CRITICAL || unresolvedCritical > 1) {
-    status = 'CRITICAL';
-    statusColor = COLOR_CRITICAL;
-  } else if (latestO2 < O2_DEGRADED || latestPower < POWER_DEGRADED_KW || unresolvedCritical > 0) {
-    status = 'DEGRADED';
-    statusColor = COLOR_DEGRADED;
-  }
+  const stationStatus = computeStationStatus(latestO2, latestPower, unresolvedCritical);
+  const statusColor = stationStatus === 'CRITICAL' ? COLOR_CRITICAL
+    : stationStatus === 'DEGRADED' ? COLOR_DEGRADED : COLOR_NOMINAL;
 
-  // ---- O2 trend arrow --------------------------------------------------------
-  let o2Trend = '→';
-  const o2Prev = o2Points[o2Points.length - TREND_BACK_SAMPLES];
-  if (latestO2 - o2Prev > TREND_O2_DELTA) {
-    o2Trend = '↑';
-  } else if (latestO2 - o2Prev < -TREND_O2_DELTA) {
-    o2Trend = '↓';
-  }
+  // ---- trend arrows (domain) --------------------------------------------------
+  const o2Trend = computeO2Trend(o2Points);
+  const powerTrend = computePowerTrend(powerPoints);
 
-  let powerTrend = '→';
-  const powerPrev = powerPoints[powerPoints.length - TREND_BACK_SAMPLES];
-  if (latestPower - powerPrev > TREND_POWER_DELTA) {
-    powerTrend = '↑';
-  } else if (latestPower - powerPrev < -TREND_POWER_DELTA) {
-    powerTrend = '↓';
-  }
-
-  // ---- power budget ----------------------------------------------------------
-  let powerAvg = 0;
-  for (let i = 0; i < powerPoints.length; i++) {
-    powerAvg += powerPoints[i];
-  }
-  powerAvg = powerAvg / powerPoints.length;
-  const powerBudgetPct = Math.round((latestPower / POWER_BUDGET_MAX_KW) * 100);
+  // ---- power budget (domain) --------------------------------------------------
+  const { avg: powerAvg, budgetPct: powerBudgetPct } = computePowerBudget(powerPoints, POWER_BUDGET_MAX_KW);
   let powerClass = 'tile-ok';
   if (powerBudgetPct < POWER_BUDGET_BAD_PCT) {
     powerClass = 'tile-bad';
@@ -180,26 +152,10 @@ export default function Dashboard() {
     resupplyClass = 'tile-warn';
   }
 
-  // ---- crew on duty ----------------------------------------------------------
-  const onDuty = [];
-  const offDuty = [];
-  for (let i = 0; i < crew.members.length; i++) {
-    if (crew.members[i].onDuty) {
-      onDuty.push(crew.members[i]);
-    } else {
-      offDuty.push(crew.members[i]);
-    }
-  }
-  const shifts: Record<string, number> = {};
-  for (let i = 0; i < crew.members.length; i++) {
-    const s = crew.members[i].shift;
-    shifts[s] = (shifts[s] || 0) + 1;
-  }
-  let avgSleep = 0;
-  for (let i = 0; i < crew.members.length; i++) {
-    avgSleep += crew.members[i].sleepHours;
-  }
-  avgSleep = Math.round((avgSleep / crew.members.length) * 10) / 10;
+  // ---- crew on duty (domain) --------------------------------------------------
+  const { onDuty, offDuty } = splitByDuty(crew.members);
+  const shifts = countByShift(crew.members);
+  const avgSleep = computeAvgSleep(crew.members);
   let sleepClass = 'tile-ok';
   if (avgSleep < SLEEP_CRITICAL_H) {
     sleepClass = 'tile-bad';
@@ -207,21 +163,8 @@ export default function Dashboard() {
     sleepClass = 'tile-warn';
   }
 
-  // ---- most urgent incident (sorting inline, again) ---------------------------
-  const unresolved = [];
-  for (let i = 0; i < incidents.items.length; i++) {
-    if (!incidents.items[i].resolved) {
-      unresolved.push(incidents.items[i]);
-    }
-  }
-  unresolved.sort((a: Incident, b: Incident) => {
-    const rank: Record<string, number> = { critical: 0, warning: 1, info: 2 };
-    const ra = rank[a.severity] !== undefined ? rank[a.severity] : 3;
-    const rb = rank[b.severity] !== undefined ? rank[b.severity] : 3;
-    if (ra !== rb) return ra - rb;
-    return a.timestamp < b.timestamp ? 1 : -1;
-  });
-  const topIncident = unresolved.length > 0 ? unresolved[0] : null;
+  // ---- most urgent incident (domain) -----------------------------------------
+  const topIncident = findMostUrgent(incidents.items);
 
   // date formatting, local copy (utils.ts has one too but it formats differently)
   const fmtDate = (iso: string) => {
