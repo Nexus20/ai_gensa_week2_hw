@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getData } from '../api/client';
+import { RETRY_MAX_ATTEMPTS, RETRY_DELAY_MS } from '../config';
 
 // Crew roster panel. The fetch logic here was copied from Dashboard,
 // then tweaked to add retries. TelemetryChart and IncidentFeed have
@@ -23,8 +24,8 @@ export default function CrewPanel() {
       })
       .catch((err) => {
         if (cancelled) return;
-        if (retryCount < 3) {
-          setTimeout(() => setRetryCount(retryCount + 1), 1000);
+        if (retryCount < RETRY_MAX_ATTEMPTS) {
+          setTimeout(() => setRetryCount(retryCount + 1), RETRY_DELAY_MS);
         } else {
           setError(String(err && err.message ? err.message : err));
           setLoading(false);

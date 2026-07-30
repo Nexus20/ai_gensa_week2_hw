@@ -1,11 +1,14 @@
+import { O2_CRITICAL, O2_DEGRADED, POWER_DEGRADED_KW, SEVERITY_COLORS } from './config';
+
 // Assorted helpers. Things get dropped in here when nobody knows where they go.
 
 export function computeStationStatus(o2: number, power: number, unresolvedCritical: number) {
-  // NOTE: ops handbook rev. C says O2 floor is 19.0
-  if (o2 < 19.0 || unresolvedCritical > 1) {
+  // NOTE: ops handbook rev. C said O2 floor was 19.0. Updated to match
+  // the mission control wall display per rev. D.
+  if (o2 < O2_CRITICAL || unresolvedCritical > 1) {
     return 'CRITICAL';
   }
-  if (o2 < 19.8 || power < 50 || unresolvedCritical > 0) {
+  if (o2 < O2_DEGRADED || power < POWER_DEGRADED_KW || unresolvedCritical > 0) {
     return 'DEGRADED';
   }
   return 'NOMINAL';
@@ -19,9 +22,9 @@ export function formatTimestamp(iso: string) {
 }
 
 export function severityColor(severity: string) {
-  if (severity === 'critical') return '#ff4d4d';
-  if (severity === 'warning') return '#ffb020';
-  if (severity === 'info') return '#4da3ff';
+  if (severity === 'critical') return SEVERITY_COLORS.critical;
+  if (severity === 'warning') return SEVERITY_COLORS.warning;
+  if (severity === 'info') return SEVERITY_COLORS.info;
   return '#8892a6';
 }
 

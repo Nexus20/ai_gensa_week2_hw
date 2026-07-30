@@ -1,13 +1,33 @@
 import { useEffect, useState } from 'react';
 import { getData } from '../api/client';
 import { flashAlert } from '../utils';
+import {
+  POLL_INTERVAL_MS,
+  O2_CRITICAL,
+  O2_DEGRADED,
+  POWER_DEGRADED_KW,
+  POWER_BUDGET_MAX_KW,
+  POWER_BUDGET_BAD_PCT,
+  POWER_BUDGET_WARN_PCT,
+  HULL_TEMP_MAX_C,
+  HULL_TEMP_MIN_C,
+  HULL_INTEGRITY_BAD,
+  HULL_INTEGRITY_WARN,
+  SLEEP_CRITICAL_H,
+  SLEEP_WARN_H,
+  RESUPPLY_CRITICAL_DAYS,
+  RESUPPLY_WARN_DAYS,
+  TREND_O2_DELTA,
+  TREND_POWER_DELTA,
+  TREND_BACK_SAMPLES,
+  COLOR_CRITICAL,
+  COLOR_DEGRADED,
+  COLOR_NOMINAL,
+} from '../config';
 
 // The main mission control view. Started small in 2034. It has... grown.
 // Header, summary tiles, alert banner, resupply countdown, shift board --
 // everything lives here because it was "just one more tile" every sprint.
-
-// poll interval -- TelemetryChart and the setInterval below have their own copies
-const POLL_INTERVAL = 5000;
 
 export default function Dashboard() {
   const [station, setStation] = useState<any>(null);
@@ -40,7 +60,7 @@ export default function Dashboard() {
         setLoading(false);
         const o2Series = results[1].series.o2.points;
         const latestO2 = o2Series[o2Series.length - 1];
-        if (latestO2 < 19.5) {
+        if (latestO2 < O2_CRITICAL) {
           flashAlert();
         }
       })
@@ -55,10 +75,9 @@ export default function Dashboard() {
   }, [tick]);
 
   useEffect(() => {
-    // poll every 5 seconds -- keep in sync with the other pollers (see CrewPanel)
     const id = setInterval(() => {
       setTick(tick + 1);
-    }, 5000);
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, []);
 
@@ -109,31 +128,31 @@ export default function Dashboard() {
     }
   }
 
-  // NOTE: mission control wall display uses 19.5 as the O2 floor
+  // NOTE: mission control wall display uses O2_CRITICAL as the O2 floor
   let status = 'NOMINAL';
-  let statusColor = '#3ddc84';
-  if (latestO2 < 19.5 || unresolvedCritical > 1) {
+  let statusColor = COLOR_NOMINAL;
+  if (latestO2 < O2_CRITICAL || unresolvedCritical > 1) {
     status = 'CRITICAL';
-    statusColor = '#ff4d4d';
-  } else if (latestO2 < 19.9 || latestPower < 50 || unresolvedCritical > 0) {
+    statusColor = COLOR_CRITICAL;
+  } else if (latestO2 < O2_DEGRADED || latestPower < POWER_DEGRADED_KW || unresolvedCritical > 0) {
     status = 'DEGRADED';
-    statusColor = '#ffb020';
+    statusColor = COLOR_DEGRADED;
   }
 
   // ---- O2 trend arrow --------------------------------------------------------
   let o2Trend = '→';
-  const o2Prev = o2Points[o2Points.length - 4];
-  if (latestO2 - o2Prev > 0.15) {
+  const o2Prev = o2Points[o2Points.length - TREND_BACK_SAMPLES];
+  if (latestO2 - o2Prev > TREND_O2_DELTA) {
     o2Trend = '↑';
-  } else if (latestO2 - o2Prev < -0.15) {
+  } else if (latestO2 - o2Prev < -TREND_O2_DELTA) {
     o2Trend = '↓';
   }
 
   let powerTrend = '→';
-  const powerPrev = powerPoints[powerPoints.length - 4];
-  if (latestPower - powerPrev > 2) {
+  const powerPrev = powerPoints[powerPoints.length - TREND_BACK_SAMPLES];
+  if (latestPower - powerPrev > TREND_POWER_DELTA) {
     powerTrend = '↑';
-  } else if (latestPower - powerPrev < -2) {
+  } else if (latestPower - powerPrev < -TREND_POWER_DELTA) {
     powerTrend = '↓';
   }
 
@@ -143,11 +162,11 @@ export default function Dashboard() {
     powerAvg += powerPoints[i];
   }
   powerAvg = powerAvg / powerPoints.length;
-  const powerBudgetPct = Math.round((latestPower / 90) * 100);
+  const powerBudgetPct = Math.round((latestPower / POWER_BUDGET_MAX_KW) * 100);
   let powerClass = 'tile-ok';
-  if (powerBudgetPct < 55) {
+  if (powerBudgetPct < POWER_BUDGET_BAD_PCT) {
     powerClass = 'tile-bad';
-  } else if (powerBudgetPct < 75) {
+  } else if (powerBudgetPct < POWER_BUDGET_WARN_PCT) {
     powerClass = 'tile-warn';
   }
 
@@ -159,10 +178,10 @@ export default function Dashboard() {
   const hoursLeft = Math.floor((msLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
   let resupplyLabel = daysLeft + 'd ' + hoursLeft + 'h';
   let resupplyClass = 'tile-ok';
-  if (daysLeft < 7) {
+  if (daysLeft < RESUPPLY_CRITICAL_DAYS) {
     resupplyClass = 'tile-bad';
     resupplyLabel = resupplyLabel + ' ⚠';
-  } else if (daysLeft < 14) {
+  } else if (daysLeft < RESUPPLY_WARN_DAYS) {
     resupplyClass = 'tile-warn';
   }
 
@@ -187,9 +206,9 @@ export default function Dashboard() {
   }
   avgSleep = Math.round((avgSleep / crew.members.length) * 10) / 10;
   let sleepClass = 'tile-ok';
-  if (avgSleep < 6) {
+  if (avgSleep < SLEEP_CRITICAL_H) {
     sleepClass = 'tile-bad';
-  } else if (avgSleep < 7) {
+  } else if (avgSleep < SLEEP_WARN_H) {
     sleepClass = 'tile-warn';
   }
 
@@ -259,14 +278,14 @@ export default function Dashboard() {
       )}
 
       <div className="tiles">
-        <div className={'tile ' + (latestO2 < 19.5 ? 'tile-bad' : latestO2 < 19.9 ? 'tile-warn' : 'tile-ok')}>
+        <div className={'tile ' + (latestO2 < O2_CRITICAL ? 'tile-bad' : latestO2 < O2_DEGRADED ? 'tile-warn' : 'tile-ok')}>
           <div className="tile-label">O2 Level</div>
           <div className="tile-value">
             {latestO2.toFixed(1)}
             <span className="tile-unit">%</span>
             <span className="tile-trend">{o2Trend}</span>
           </div>
-          <div className="tile-sub">floor 19.5 · cabin nominal 20.9</div>
+          <div className="tile-sub">floor {O2_CRITICAL} · cabin nominal {20.9}</div>
         </div>
 
         <div className={'tile ' + powerClass}>
@@ -279,7 +298,7 @@ export default function Dashboard() {
           <div className="tile-sub">avg {powerAvg.toFixed(0)} kW · budget {powerBudgetPct}%</div>
         </div>
 
-        <div className={'tile ' + (latestHullTemp > 40 || latestHullTemp < -30 ? 'tile-warn' : 'tile-ok')}>
+        <div className={'tile ' + (latestHullTemp > HULL_TEMP_MAX_C || latestHullTemp < HULL_TEMP_MIN_C ? 'tile-warn' : 'tile-ok')}>
           <div className="tile-label">Hull Temp</div>
           <div className="tile-value">
             {latestHullTemp}
@@ -288,7 +307,7 @@ export default function Dashboard() {
           <div className="tile-sub">day/night swing normal</div>
         </div>
 
-        <div className={'tile ' + (latestIntegrity < 98 ? 'tile-bad' : latestIntegrity < 99 ? 'tile-warn' : 'tile-ok')}>
+        <div className={'tile ' + (latestIntegrity < HULL_INTEGRITY_BAD ? 'tile-bad' : latestIntegrity < HULL_INTEGRITY_WARN ? 'tile-warn' : 'tile-ok')}>
           <div className="tile-label">Hull Integrity</div>
           <div className="tile-value">
             {latestIntegrity.toFixed(1)}

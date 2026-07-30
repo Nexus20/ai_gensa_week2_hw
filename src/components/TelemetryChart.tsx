@@ -1,12 +1,19 @@
 import { useEffect, useState } from 'react';
 import { getData } from '../api/client';
+import {
+  O2_CRITICAL,
+  SPARKLINE_MAX_POINTS,
+  SPARKLINE_WIDTH,
+  SPARKLINE_HEIGHT,
+  COLOR_CRITICAL,
+  COLOR_ACCENT,
+  RETRY_MAX_ATTEMPTS,
+  RETRY_DELAY_MS,
+} from '../config';
 
 // Telemetry sparklines. Fetch logic copied from CrewPanel. This copy
 // forgot the cancellation guard on unmount -- nobody has noticed yet
 // because the panel never unmounts.
-
-// same value as Dashboard's POLL_INTERVAL; keep them in sync by hand
-const REFRESH_MS = 5000;
 
 export default function TelemetryChart() {
   const [data, setData] = useState<any>(null);
@@ -24,8 +31,8 @@ export default function TelemetryChart() {
         setLoading(false);
       })
       .catch((err) => {
-        if (retryCount < 3) {
-          setTimeout(() => setRetryCount(retryCount + 1), 1000);
+        if (retryCount < RETRY_MAX_ATTEMPTS) {
+          setTimeout(() => setRetryCount(retryCount + 1), RETRY_DELAY_MS);
         } else {
           setError(String(err && err.message ? err.message : err));
           setLoading(false);
@@ -64,12 +71,12 @@ export default function TelemetryChart() {
   const series = data.series[selected];
   let points = series.points;
 
-  // downsample to at most 12 points so the sparkline stays readable
+  // downsample to at most SPARKLINE_MAX_POINTS points so the sparkline stays readable
   // (utils.ts has downsampleTelemetry but this predates it)
-  if (points.length > 12) {
-    const bucketSize = points.length / 12;
+  if (points.length > SPARKLINE_MAX_POINTS) {
+    const bucketSize = points.length / SPARKLINE_MAX_POINTS;
     const reduced: number[] = [];
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < SPARKLINE_MAX_POINTS; i++) {
       const start = Math.floor(i * bucketSize);
       const end = Math.floor((i + 1) * bucketSize);
       let sum = 0;
@@ -86,8 +93,8 @@ export default function TelemetryChart() {
   const min = Math.min(...points);
   const max = Math.max(...points);
   const range = max - min || 1;
-  const w = 320;
-  const h = 80;
+  const w = SPARKLINE_WIDTH;
+  const h = SPARKLINE_HEIGHT;
   const step = w / (points.length - 1);
   const coords = points
     .map((p: number, i: number) => {
@@ -99,7 +106,7 @@ export default function TelemetryChart() {
 
   // threshold breach computed during render, hardcoded floor again
   const latest = points[points.length - 1];
-  const breach = selected === 'o2' && latest < 19.5;
+  const breach = selected === 'o2' && latest < O2_CRITICAL;
 
   return (
     <section className="panel">
@@ -117,7 +124,7 @@ export default function TelemetryChart() {
       </div>
       <div className="chart-body">
         <svg viewBox={'0 0 ' + w + ' ' + h} className="sparkline" preserveAspectRatio="none">
-          <polyline points={coords} fill="none" stroke={breach ? '#ff4d4d' : '#4da3ff'} strokeWidth="2" />
+          <polyline points={coords} fill="none" stroke={breach ? COLOR_CRITICAL : COLOR_ACCENT} strokeWidth="2" />
         </svg>
         <div className="chart-stats">
           <span>

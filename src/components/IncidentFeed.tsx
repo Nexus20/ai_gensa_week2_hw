@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getData } from '../api/client';
 import { formatTimestamp, severityColor } from '../utils';
+import { RETRY_MAX_ATTEMPTS, RETRY_DELAY_MS } from '../config';
 
 // Incident feed. Fetch logic copied from CrewPanel (which was copied from
 // Dashboard). This one silently swallows errors after the retries run out,
@@ -25,8 +26,8 @@ export default function IncidentFeed() {
       })
       .catch(() => {
         if (cancelled) return;
-        if (retryCount < 2) {
-          setTimeout(() => setRetryCount(retryCount + 1), 1500);
+        if (retryCount < RETRY_MAX_ATTEMPTS) {
+          setTimeout(() => setRetryCount(retryCount + 1), RETRY_DELAY_MS);
         } else {
           // swallow the error, just stop loading
           setData({ items: [] });
