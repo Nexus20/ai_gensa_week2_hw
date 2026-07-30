@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sortBySeverity, filterUnresolved, countBySeverity, findMostUrgent } from './incidents';
+import { sortBySeverity, filterUnresolved, countBySeverity, findMostUrgent, countResolvedOnDate } from './incidents';
 import type { Incident } from '../api/types';
 
 function makeIncident(overrides: Partial<Incident> = {}): Incident {
@@ -82,5 +82,16 @@ describe('findMostUrgent', () => {
       makeIncident({ id: 'b', severity: 'warning', resolved: false }),
     ];
     expect(findMostUrgent(incidents)!.id).toBe('b');
+  });
+});
+
+describe('countResolvedOnDate', () => {
+  it('counts resolved incidents matching date prefix', () => {
+    const incidents = [
+      makeIncident({ id: 'a', resolved: true, timestamp: '2036-07-11T05:00:00Z' }),
+      makeIncident({ id: 'b', resolved: true, timestamp: '2036-07-10T00:00:00Z' }),
+      makeIncident({ id: 'c', resolved: false, timestamp: '2036-07-11T00:00:00Z' }),
+    ];
+    expect(countResolvedOnDate(incidents, '2036-07-11')).toBe(1);
   });
 });

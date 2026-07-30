@@ -41,3 +41,11 @@ export function findMostUrgent(incidents: Incident[]): Incident | null {
   if (unresolved.length === 0) return null;
   return sortBySeverity(unresolved)[0];
 }
+
+export function countResolvedOnDate(incidents: Incident[], datePrefix: string): number {
+  let count = 0;
+  for (const inc of incidents) {
+    if (inc.resolved && inc.timestamp.indexOf(datePrefix) === 0) count++;
+  }
+  return count;
+}

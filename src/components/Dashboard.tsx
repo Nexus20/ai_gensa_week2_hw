@@ -1,282 +1,96 @@
 import { useEffect, useState } from 'react';
-import { getData } from '../api/client';
+import { useApiResource } from '../hooks/useApiResource';
 import type { Station, TelemetryResponse, CrewResponse, IncidentsResponse } from '../api/types';
 import { computeStationStatus } from '../domain/station';
 import { computeO2Trend, computePowerTrend, computePowerBudget } from '../domain/telemetry';
 import { splitByDuty, countByShift, computeAvgSleep } from '../domain/crew';
-import { countBySeverity, findMostUrgent } from '../domain/incidents';
+import { countBySeverity, findMostUrgent, countResolvedOnDate } from '../domain/incidents';
+import { getPowerBudgetClass, getSleepClass, computeResupply } from '../domain/tiles';
 import {
-  POLL_INTERVAL_MS,
-  O2_CRITICAL,
-  O2_DEGRADED,
-  POWER_BUDGET_MAX_KW,
-  POWER_BUDGET_BAD_PCT,
-  POWER_BUDGET_WARN_PCT,
-  HULL_TEMP_MAX_C,
-  HULL_TEMP_MIN_C,
-  HULL_INTEGRITY_BAD,
-  HULL_INTEGRITY_WARN,
-  SLEEP_CRITICAL_H,
-  SLEEP_WARN_H,
-  RESUPPLY_CRITICAL_DAYS,
-  RESUPPLY_WARN_DAYS,
-  COLOR_CRITICAL,
-  COLOR_DEGRADED,
-  COLOR_NOMINAL,
+  POWER_BUDGET_MAX_KW, POWER_BUDGET_BAD_PCT, POWER_BUDGET_WARN_PCT,
+  SLEEP_CRITICAL_H, SLEEP_WARN_H, RESUPPLY_CRITICAL_DAYS, RESUPPLY_WARN_DAYS,
+  COLOR_CRITICAL, COLOR_DEGRADED, COLOR_NOMINAL, O2_CRITICAL, O2_DEGRADED,
+  HULL_TEMP_MAX_C, HULL_TEMP_MIN_C, HULL_INTEGRITY_BAD, HULL_INTEGRITY_WARN,
 } from '../config';
-
-// The main mission control view. Started small in 2034. It has... grown.
-// Header, summary tiles, alert banner, resupply countdown, shift board --
-// everything lives here because it was "just one more tile" every sprint.
+import StatusHeader from './StatusHeader';
+import AlertBanner from './AlertBanner';
+import TileGrid from './TileGrid';
 
 export default function Dashboard() {
-  const [station, setStation] = useState<Station | null>(null);
-  const [telemetry, setTelemetry] = useState<TelemetryResponse | null>(null);
-  const [crew, setCrew] = useState<CrewResponse | null>(null);
-  const [incidents, setIncidents] = useState<IncidentsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const s = useApiResource<Station>('station');
+  const t = useApiResource<TelemetryResponse>('telemetry');
+  const c = useApiResource<CrewResponse>('crew');
+  const i = useApiResource<IncidentsResponse>('incidents');
   const [lastSync, setLastSync] = useState('');
-  const [tick, setTick] = useState(0);
+
+  const allHaveData = [s.data, t.data, c.data, i.data].every(Boolean);
+  const loading = [s.loading, t.loading, c.loading, i.loading].some(Boolean);
+  const error = [s.error, t.error, c.error, i.error].find(Boolean) || '';
 
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    Promise.all([
-      getData<Station>('station'),
-      getData<TelemetryResponse>('telemetry'),
-      getData<CrewResponse>('crew'),
-      getData<IncidentsResponse>('incidents')
-    ])
-      .then((results) => {
-        if (cancelled) return;
-        setStation(results[0]);
-        setTelemetry(results[1]);
-        setCrew(results[2]);
-        setIncidents(results[3]);
-        const now = new Date();
-        const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
-        setLastSync(pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds()));
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(String(err && err.message ? err.message : err));
-        setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tick]);
+    if (!allHaveData) return;
+    const now = new Date();
+    const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
+    setLastSync(pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds()));
+  }, [allHaveData]);
 
-  useEffect(() => {
-    const id = setInterval(() => {
-      setTick(tick + 1);
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, []);
-
-  if (loading && !station) {
-    return (
-      <div className="dashboard dashboard-loading">
-        <div className="spinner" />
-        <p>Establishing uplink to ISS Kruger-60…</p>
-      </div>
-    );
+  if (loading && !s.data) {
+    return <div className="dashboard dashboard-loading"><div className="spinner" /><p>Establishing uplink to ISS Kruger-60…</p></div>;
   }
-
   if (error) {
     return (
       <div className="dashboard dashboard-error">
-        <h1>⚠ Uplink lost</h1>
-        <p>{error}</p>
-        <button onClick={() => setTick(tick + 1)}>Retry uplink</button>
+        <h1>⚠ Uplink lost</h1><p>{error}</p>
+        <button onClick={() => { s.retry(); t.retry(); c.retry(); i.retry(); }}>Retry uplink</button>
       </div>
     );
   }
+  if (!allHaveData) return null;
+  const stationData = s.data!;
+  const telemetryData = t.data!;
+  const crewData = c.data!;
+  const incidentsData = i.data!;
 
-  if (!station || !telemetry || !crew || !incidents) {
-    return null;
-  }
-
-  // ---- computed values via domain logic -------------------------------------
-  const o2Points = telemetry.series.o2.points;
-  const powerPoints = telemetry.series.power.points;
-  const hullTempPoints = telemetry.series.hullTemp.points;
-  const integrityPoints = telemetry.series.hullIntegrity.points;
+  const o2Points = telemetryData.series.o2.points;
+  const powerPoints = telemetryData.series.power.points;
   const latestO2 = o2Points[o2Points.length - 1];
   const latestPower = powerPoints[powerPoints.length - 1];
-  const latestHullTemp = hullTempPoints[hullTempPoints.length - 1];
-  const latestIntegrity = integrityPoints[integrityPoints.length - 1];
 
-  const incidentCounts = countBySeverity(incidents.items);
-  const unresolvedCritical = incidentCounts.critical;
-  const unresolvedWarning = incidentCounts.warning;
+  const incidentCounts = countBySeverity(incidentsData.items);
+  const resolvedToday = countResolvedOnDate(incidentsData.items, '2036-07-11');
 
-  let resolvedToday = 0;
-  for (let i = 0; i < incidents.items.length; i++) {
-    if (incidents.items[i].resolved && incidents.items[i].timestamp.indexOf('2036-07-11') === 0) {
-      resolvedToday++;
-    }
-  }
-
-  const stationStatus = computeStationStatus(latestO2, latestPower, unresolvedCritical);
-  const statusColor = stationStatus === 'CRITICAL' ? COLOR_CRITICAL
-    : stationStatus === 'DEGRADED' ? COLOR_DEGRADED : COLOR_NOMINAL;
-
-  // ---- trend arrows (domain) --------------------------------------------------
+  const status = computeStationStatus(latestO2, latestPower, incidentCounts.critical);
+  const statusColor = status === 'CRITICAL' ? COLOR_CRITICAL : status === 'DEGRADED' ? COLOR_DEGRADED : COLOR_NOMINAL;
   const o2Trend = computeO2Trend(o2Points);
   const powerTrend = computePowerTrend(powerPoints);
-
-  // ---- power budget (domain) --------------------------------------------------
   const { avg: powerAvg, budgetPct: powerBudgetPct } = computePowerBudget(powerPoints, POWER_BUDGET_MAX_KW);
-  let powerClass = 'tile-ok';
-  if (powerBudgetPct < POWER_BUDGET_BAD_PCT) {
-    powerClass = 'tile-bad';
-  } else if (powerBudgetPct < POWER_BUDGET_WARN_PCT) {
-    powerClass = 'tile-warn';
-  }
-
-  // ---- resupply countdown ----------------------------------------------------
-  const resupplyDate = new Date(station.nextResupply);
-  const nowMs = new Date('2036-07-11T09:00:00Z').getTime();
-  const msLeft = resupplyDate.getTime() - nowMs;
-  const daysLeft = Math.floor(msLeft / (1000 * 60 * 60 * 24));
-  const hoursLeft = Math.floor((msLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-  let resupplyLabel = daysLeft + 'd ' + hoursLeft + 'h';
-  let resupplyClass = 'tile-ok';
-  if (daysLeft < RESUPPLY_CRITICAL_DAYS) {
-    resupplyClass = 'tile-bad';
-    resupplyLabel = resupplyLabel + ' ⚠';
-  } else if (daysLeft < RESUPPLY_WARN_DAYS) {
-    resupplyClass = 'tile-warn';
-  }
-
-  // ---- crew on duty (domain) --------------------------------------------------
-  const { onDuty, offDuty } = splitByDuty(crew.members);
-  const shifts = countByShift(crew.members);
-  const avgSleep = computeAvgSleep(crew.members);
-  let sleepClass = 'tile-ok';
-  if (avgSleep < SLEEP_CRITICAL_H) {
-    sleepClass = 'tile-bad';
-  } else if (avgSleep < SLEEP_WARN_H) {
-    sleepClass = 'tile-warn';
-  }
-
-  // ---- most urgent incident (domain) -----------------------------------------
-  const topIncident = findMostUrgent(incidents.items);
-
-  // date formatting, local copy (utils.ts has one too but it formats differently)
-  const fmtDate = (iso: string) => {
-    const d = new Date(iso);
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
-    return months[d.getUTCMonth()] + ' ' + d.getUTCDate() + ' ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + 'z';
-  };
+  const powerClass = getPowerBudgetClass(powerBudgetPct, POWER_BUDGET_BAD_PCT, POWER_BUDGET_WARN_PCT);
+  const resupply = computeResupply(stationData.nextResupply, '2036-07-11T09:00:00Z', RESUPPLY_CRITICAL_DAYS, RESUPPLY_WARN_DAYS);
+  const { onDuty, offDuty } = splitByDuty(crewData.members);
+  const shifts = countByShift(crewData.members);
+  const avgSleep = computeAvgSleep(crewData.members);
+  const sleepClass = getSleepClass(avgSleep, SLEEP_CRITICAL_H, SLEEP_WARN_H);
+  const topIncident = findMostUrgent(incidentsData.items);
 
   return (
     <div className="dashboard">
-      <header className="dash-header" style={{ borderBottom: '1px solid #232a3b', paddingBottom: 14 }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 26, letterSpacing: 1 }}>
-            {station.name}
-            <span style={{ fontSize: 13, marginLeft: 12, color: '#8892a6', fontWeight: 400 }}>
-              {station.orbit} · {station.velocityKms} km/s · inc {station.inclinationDeg}°
-            </span>
-          </h1>
-          <p style={{ margin: '4px 0 0', color: '#8892a6', fontSize: 13 }}>
-            Mission day {station.daysInService} · crew {station.crewOnboard}/{station.crewCapacity} · last sync {lastSync}
-          </p>
-        </div>
-        <div className="status-pill" style={{ background: statusColor + '22', color: statusColor, border: '1px solid ' + statusColor }}>
-          <span className="status-dot" style={{ background: statusColor }} />
-          {status}
-        </div>
-      </header>
-
-      {status !== 'NOMINAL' && topIncident && (
-        <div className="alert-banner" style={{ borderColor: statusColor }}>
-          <strong style={{ color: statusColor }}>{status === 'CRITICAL' ? 'CRITICAL ALERT' : 'ATTENTION'}</strong>
-          <span style={{ marginLeft: 10 }}>
-            {topIncident.id}: {topIncident.title}
-          </span>
-          <span style={{ marginLeft: 'auto', color: '#8892a6', fontSize: 12 }}>{fmtDate(topIncident.timestamp)}</span>
-        </div>
-      )}
-
-      <div className="tiles">
-        <div className={'tile ' + (latestO2 < O2_CRITICAL ? 'tile-bad' : latestO2 < O2_DEGRADED ? 'tile-warn' : 'tile-ok')}>
-          <div className="tile-label">O2 Level</div>
-          <div className="tile-value">
-            {latestO2.toFixed(1)}
-            <span className="tile-unit">%</span>
-            <span className="tile-trend">{o2Trend}</span>
-          </div>
-          <div className="tile-sub">floor {O2_CRITICAL} · cabin nominal {20.9}</div>
-        </div>
-
-        <div className={'tile ' + powerClass}>
-          <div className="tile-label">Power Output</div>
-          <div className="tile-value">
-            {latestPower}
-            <span className="tile-unit">kW</span>
-            <span className="tile-trend">{powerTrend}</span>
-          </div>
-          <div className="tile-sub">avg {powerAvg.toFixed(0)} kW · budget {powerBudgetPct}%</div>
-        </div>
-
-        <div className={'tile ' + (latestHullTemp > HULL_TEMP_MAX_C || latestHullTemp < HULL_TEMP_MIN_C ? 'tile-warn' : 'tile-ok')}>
-          <div className="tile-label">Hull Temp</div>
-          <div className="tile-value">
-            {latestHullTemp}
-            <span className="tile-unit">°C</span>
-          </div>
-          <div className="tile-sub">day/night swing normal</div>
-        </div>
-
-        <div className={'tile ' + (latestIntegrity < HULL_INTEGRITY_BAD ? 'tile-bad' : latestIntegrity < HULL_INTEGRITY_WARN ? 'tile-warn' : 'tile-ok')}>
-          <div className="tile-label">Hull Integrity</div>
-          <div className="tile-value">
-            {latestIntegrity.toFixed(1)}
-            <span className="tile-unit">%</span>
-          </div>
-          <div className="tile-sub">MMOD shielding rated to 97.0</div>
-        </div>
-
-        <div className={'tile ' + (unresolvedCritical > 0 ? 'tile-bad' : unresolvedWarning > 0 ? 'tile-warn' : 'tile-ok')}>
-          <div className="tile-label">Open Incidents</div>
-          <div className="tile-value">
-            {unresolvedCritical + unresolvedWarning}
-            <span className="tile-unit">open</span>
-          </div>
-          <div className="tile-sub">
-            {unresolvedCritical} critical · {unresolvedWarning} warning · {resolvedToday} resolved today
-          </div>
-        </div>
-
-        <div className={'tile ' + resupplyClass}>
-          <div className="tile-label">Next Resupply</div>
-          <div className="tile-value" style={{ fontSize: 24 }}>{resupplyLabel}</div>
-          <div className="tile-sub">{fmtDate(station.nextResupply)}</div>
-        </div>
-
-        <div className={'tile ' + sleepClass}>
-          <div className="tile-label">Crew Rest</div>
-          <div className="tile-value">
-            {avgSleep}
-            <span className="tile-unit">h avg</span>
-          </div>
-          <div className="tile-sub">{onDuty.length} on duty · {offDuty.length} off duty</div>
-        </div>
-
-        <div className="tile tile-ok">
-          <div className="tile-label">Shift Board</div>
-          <div className="tile-value" style={{ fontSize: 20 }}>
-            α {shifts['alpha'] || 0} · β {shifts['beta'] || 0} · γ {shifts['gamma'] || 0}
-          </div>
-          <div className="tile-sub">commissioned {fmtDate(station.commissioned + 'T00:00:00Z')}</div>
-        </div>
-      </div>
+      <StatusHeader station={stationData} status={status} statusColor={statusColor} lastSync={lastSync} />
+      <AlertBanner status={status} statusColor={statusColor} topIncident={topIncident} />
+      <TileGrid
+        latestO2={latestO2} o2Trend={o2Trend}
+        latestPower={latestPower} powerTrend={powerTrend}
+        powerAvg={powerAvg} powerClass={powerClass} powerBudgetPct={powerBudgetPct}
+        latestHullTemp={telemetryData.series.hullTemp.points[telemetryData.series.hullTemp.points.length - 1]}
+        latestIntegrity={telemetryData.series.hullIntegrity.points[telemetryData.series.hullIntegrity.points.length - 1]}
+        unresolvedCritical={incidentCounts.critical} unresolvedWarning={incidentCounts.warning}
+        resolvedToday={resolvedToday}
+        resupplyLabel={resupply.label} resupplyClass={resupply.tileClass}
+        crew={{ onDuty, offDuty, shifts, avgSleep, sleepClass }}
+        resupplyDate={stationData.nextResupply} commissioned={stationData.commissioned}
+        o2Critical={O2_CRITICAL} o2Degraded={O2_DEGRADED}
+        hullTempMax={HULL_TEMP_MAX_C} hullTempMin={HULL_TEMP_MIN_C}
+        hullIntegrityBad={HULL_INTEGRITY_BAD} hullIntegrityWarn={HULL_INTEGRITY_WARN}
+      />
     </div>
   );
 }
