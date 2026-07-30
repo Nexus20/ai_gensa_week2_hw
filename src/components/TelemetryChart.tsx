@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { getData } from '../api/client';
+import { useState } from 'react';
+import { useApiResource } from '../hooks/useApiResource';
 import type { TelemetryResponse } from '../api/types';
 import {
   O2_CRITICAL,
@@ -8,38 +8,12 @@ import {
   SPARKLINE_HEIGHT,
   COLOR_CRITICAL,
   COLOR_ACCENT,
-  RETRY_MAX_ATTEMPTS,
-  RETRY_DELAY_MS,
 } from '../config';
-
-// Telemetry sparklines. Fetch logic copied from CrewPanel. This copy
-// forgot the cancellation guard on unmount -- nobody has noticed yet
-// because the panel never unmounts.
+import { downsampleTelemetry } from '../domain/telemetry';
 
 export default function TelemetryChart() {
-  const [data, setData] = useState<TelemetryResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [retryCount, setRetryCount] = useState(0);
+  const { data, loading, error, retry } = useApiResource<TelemetryResponse>('telemetry');
   const [selected, setSelected] = useState('o2');
-
-  useEffect(() => {
-    setLoading(true);
-    setError('');
-    getData<TelemetryResponse>('telemetry')
-      .then((result) => {
-        setData(result);
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (retryCount < RETRY_MAX_ATTEMPTS) {
-          setTimeout(() => setRetryCount(retryCount + 1), RETRY_DELAY_MS);
-        } else {
-          setError(String(err && err.message ? err.message : err));
-          setLoading(false);
-        }
-      });
-  }, [retryCount]);
 
   if (loading) {
     return (
@@ -59,7 +33,7 @@ export default function TelemetryChart() {
         <h2>Telemetry</h2>
         <div className="panel-error">
           <p>⚠ {error}</p>
-          <button onClick={() => setRetryCount(0)}>Retry</button>
+          <button onClick={retry}>Retry</button>
         </div>
       </section>
     );
@@ -70,26 +44,7 @@ export default function TelemetryChart() {
   }
 
   const series = data.series[selected as keyof typeof data.series];
-  let points = series.points;
-
-  // downsample to at most SPARKLINE_MAX_POINTS points so the sparkline stays readable
-  // (utils.ts has downsampleTelemetry but this predates it)
-  if (points.length > SPARKLINE_MAX_POINTS) {
-    const bucketSize = points.length / SPARKLINE_MAX_POINTS;
-    const reduced: number[] = [];
-    for (let i = 0; i < SPARKLINE_MAX_POINTS; i++) {
-      const start = Math.floor(i * bucketSize);
-      const end = Math.floor((i + 1) * bucketSize);
-      let sum = 0;
-      let count = 0;
-      for (let j = start; j < end && j < points.length; j++) {
-        sum += points[j];
-        count++;
-      }
-      reduced.push(count > 0 ? sum / count : points[start]);
-    }
-    points = reduced;
-  }
+  const points = downsampleTelemetry(series.points, SPARKLINE_MAX_POINTS);
 
   const min = Math.min(...points);
   const max = Math.max(...points);
@@ -105,7 +60,6 @@ export default function TelemetryChart() {
     })
     .join(' ');
 
-  // threshold breach computed during render, hardcoded floor again
   const latest = points[points.length - 1];
   const breach = selected === 'o2' && latest < O2_CRITICAL;
 

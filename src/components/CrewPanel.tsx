@@ -1,41 +1,8 @@
-import { useEffect, useState } from 'react';
-import { getData } from '../api/client';
+import { useApiResource } from '../hooks/useApiResource';
 import type { CrewResponse, CrewMember } from '../api/types';
-import { RETRY_MAX_ATTEMPTS, RETRY_DELAY_MS } from '../config';
-
-// Crew roster panel. The fetch logic here was copied from Dashboard,
-// then tweaked to add retries. TelemetryChart and IncidentFeed have
-// their own copies too. They have all drifted apart a little.
 
 export default function CrewPanel() {
-  const [data, setData] = useState<CrewResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [retryCount, setRetryCount] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    getData<CrewResponse>('crew')
-      .then((result) => {
-        if (cancelled) return;
-        setData(result);
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        if (retryCount < RETRY_MAX_ATTEMPTS) {
-          setTimeout(() => setRetryCount(retryCount + 1), RETRY_DELAY_MS);
-        } else {
-          setError(String(err && err.message ? err.message : err));
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [retryCount]);
+  const { data, loading, error, retry } = useApiResource<CrewResponse>('crew');
 
   if (loading) {
     return (
@@ -55,7 +22,7 @@ export default function CrewPanel() {
         <h2>Crew</h2>
         <div className="panel-error">
           <p>⚠ {error}</p>
-          <button onClick={() => setRetryCount(0)}>Retry</button>
+          <button onClick={retry}>Retry</button>
         </div>
       </section>
     );

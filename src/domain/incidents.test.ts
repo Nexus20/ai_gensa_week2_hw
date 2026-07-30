@@ -67,6 +67,15 @@ describe('findMostUrgent', () => {
     expect(findMostUrgent(incidents)!.id).toBe('b');
   });
 
+  it('handles unknown severity gracefully', () => {
+    const incidents = [
+      { ...makeIncident({ id: 'a' }), severity: 'unknown' as 'critical' },
+      makeIncident({ id: 'b', severity: 'critical' }),
+    ] as Incident[];
+    const sorted = sortBySeverity(incidents);
+    expect(sorted[0].id).toBe('b');
+  });
+
   it('skips resolved incidents', () => {
     const incidents = [
       makeIncident({ id: 'a', severity: 'critical', resolved: true }),

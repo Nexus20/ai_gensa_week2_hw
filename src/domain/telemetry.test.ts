@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { downsampleTelemetry, computeTrend, computePowerBudget } from './telemetry';
+import { downsampleTelemetry, computeTrend, computePowerBudget, computeO2Trend, computePowerTrend } from './telemetry';
 
 describe('downsampleTelemetry', () => {
   it('returns original array if length <= maxPoints', () => {
@@ -32,6 +32,18 @@ describe('computeTrend', () => {
 
   it('returns steady arrow when change is within delta', () => {
     expect(computeTrend([10, 10.05], 0.15, 2)).toBe('→');
+  });
+});
+
+describe('computeO2Trend', () => {
+  it('uses O2 delta and returns upward arrow', () => {
+    expect(computeO2Trend([20.5, 20.5, 20.5, 20.5, 20.7])).toBe('↑');
+  });
+});
+
+describe('computePowerTrend', () => {
+  it('uses power delta and returns downward arrow', () => {
+    expect(computePowerTrend([80, 80, 80, 80, 76])).toBe('↓');
   });
 });
 
