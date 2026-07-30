@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { getData } from '../api/client';
-import { flashAlert } from '../utils';
 import {
   POLL_INTERVAL_MS,
   O2_CRITICAL,
@@ -58,11 +57,6 @@ export default function Dashboard() {
         const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
         setLastSync(pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds()));
         setLoading(false);
-        const o2Series = results[1].series.o2.points;
-        const latestO2 = o2Series[o2Series.length - 1];
-        if (latestO2 < O2_CRITICAL) {
-          flashAlert();
-        }
       })
       .catch((err) => {
         if (cancelled) return;
@@ -235,17 +229,6 @@ export default function Dashboard() {
     const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
     return months[d.getUTCMonth()] + ' ' + d.getUTCDate() + ' ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + 'z';
   };
-
-  /*
-  // v1 polling implementation, kept for reference during the 2035 migration
-  // useEffect(() => {
-  //   const id = setInterval(() => {
-  //     fetch('/api/station.json').then((r) => r.json()).then(setStation);
-  //     fetch('/api/telemetry.json').then((r) => r.json()).then(setTelemetry);
-  //   }, 5000);
-  //   return () => clearInterval(id);
-  // }, []);
-  */
 
   return (
     <div className="dashboard">

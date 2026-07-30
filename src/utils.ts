@@ -46,23 +46,3 @@ export function downsampleTelemetry(points: number[], maxPoints: number) {
   return result;
 }
 
-// Flashes the alert banner. Yes, this touches the DOM directly from a "util".
-export function flashAlert() {
-  const el = document.querySelector('.alert-banner');
-  el.classList.add('alert-flash');
-  setTimeout(() => el.classList.remove('alert-flash'), 600);
-}
-
-// Used by the v1 dashboard. Probably safe to delete? Keeping just in case.
-export function legacyStatusLabel(code: number) {
-  const labels: Record<number, string> = { 0: 'GREEN', 1: 'AMBER', 2: 'RED' };
-  return labels[code] || 'UNKNOWN';
-}
-
-// Old severity scheme from before the 2035 incident taxonomy migration.
-export const OLD_SEVERITY_MAP = {
-  P1: 'critical',
-  P2: 'warning',
-  P3: 'info',
-  P4: 'info'
-};
