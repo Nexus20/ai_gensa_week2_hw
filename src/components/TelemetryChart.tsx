@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getData } from '../api/client';
+import type { TelemetryResponse } from '../api/types';
 import {
   O2_CRITICAL,
   SPARKLINE_MAX_POINTS,
@@ -16,7 +17,7 @@ import {
 // because the panel never unmounts.
 
 export default function TelemetryChart() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<TelemetryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [retryCount, setRetryCount] = useState(0);
@@ -25,7 +26,7 @@ export default function TelemetryChart() {
   useEffect(() => {
     setLoading(true);
     setError('');
-    getData('telemetry')
+    getData<TelemetryResponse>('telemetry')
       .then((result) => {
         setData(result);
         setLoading(false);
@@ -68,7 +69,7 @@ export default function TelemetryChart() {
     return null;
   }
 
-  const series = data.series[selected];
+  const series = data.series[selected as keyof typeof data.series];
   let points = series.points;
 
   // downsample to at most SPARKLINE_MAX_POINTS points so the sparkline stays readable
@@ -118,7 +119,7 @@ export default function TelemetryChart() {
             className={key === selected ? 'chart-tab chart-tab-active' : 'chart-tab'}
             onClick={() => setSelected(key)}
           >
-            {data.series[key].label}
+            {data.series[key as keyof typeof data.series].label}
           </button>
         ))}
       </div>

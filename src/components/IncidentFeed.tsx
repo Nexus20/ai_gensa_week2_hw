@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getData } from '../api/client';
 import { formatTimestamp, severityColor } from '../utils';
+import type { IncidentsResponse, Incident } from '../api/types';
 import { RETRY_MAX_ATTEMPTS, RETRY_DELAY_MS } from '../config';
 
 // Incident feed. Fetch logic copied from CrewPanel (which was copied from
@@ -8,7 +9,7 @@ import { RETRY_MAX_ATTEMPTS, RETRY_DELAY_MS } from '../config';
 // which ops has complained about twice.
 
 export default function IncidentFeed() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<IncidentsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [retryCount, setRetryCount] = useState(0);
@@ -18,7 +19,7 @@ export default function IncidentFeed() {
     let cancelled = false;
     setLoading(true);
     setError('');
-    getData('incidents')
+    getData<IncidentsResponse>('incidents')
       .then((result) => {
         if (cancelled) return;
         setData(result);
@@ -30,7 +31,7 @@ export default function IncidentFeed() {
           setTimeout(() => setRetryCount(retryCount + 1), RETRY_DELAY_MS);
         } else {
           // swallow the error, just stop loading
-          setData({ items: [] });
+          setData({ updated: '', items: [] });
           setLoading(false);
         }
       });
@@ -67,9 +68,9 @@ export default function IncidentFeed() {
     return null;
   }
 
-  const items = data.items.filter((i: any) => showResolved || !i.resolved);
+  const items = data.items.filter((i: Incident) => showResolved || !i.resolved);
   const rank: Record<string, number> = { critical: 0, warning: 1, info: 2 };
-  items.sort((a: any, b: any) => {
+  items.sort((a: Incident, b: Incident) => {
     const ra = rank[a.severity] !== undefined ? rank[a.severity] : 3;
     const rb = rank[b.severity] !== undefined ? rank[b.severity] : 3;
     if (ra !== rb) return ra - rb;
@@ -86,7 +87,7 @@ export default function IncidentFeed() {
         </label>
       </h2>
       <ul className="incident-list">
-        {items.map((inc: any) => (
+        {items.map((inc: Incident) => (
           <li key={inc.id} className={inc.resolved ? 'incident-row incident-resolved' : 'incident-row'}>
             <span className="incident-sev" style={{ background: severityColor(inc.severity) }}>
               {inc.severity}

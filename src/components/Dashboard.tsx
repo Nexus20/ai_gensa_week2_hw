@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getData } from '../api/client';
+import type { Station, TelemetryResponse, CrewResponse, IncidentsResponse, Incident } from '../api/types';
 import {
   POLL_INTERVAL_MS,
   O2_CRITICAL,
@@ -29,10 +30,10 @@ import {
 // everything lives here because it was "just one more tile" every sprint.
 
 export default function Dashboard() {
-  const [station, setStation] = useState<any>(null);
-  const [telemetry, setTelemetry] = useState<any>(null);
-  const [crew, setCrew] = useState<any>(null);
-  const [incidents, setIncidents] = useState<any>(null);
+  const [station, setStation] = useState<Station | null>(null);
+  const [telemetry, setTelemetry] = useState<TelemetryResponse | null>(null);
+  const [crew, setCrew] = useState<CrewResponse | null>(null);
+  const [incidents, setIncidents] = useState<IncidentsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastSync, setLastSync] = useState('');
@@ -42,10 +43,10 @@ export default function Dashboard() {
     let cancelled = false;
     setLoading(true);
     Promise.all([
-      getData('station'),
-      getData('telemetry'),
-      getData('crew'),
-      getData('incidents')
+      getData<Station>('station'),
+      getData<TelemetryResponse>('telemetry'),
+      getData<CrewResponse>('crew'),
+      getData<IncidentsResponse>('incidents')
     ])
       .then((results) => {
         if (cancelled) return;
@@ -213,7 +214,7 @@ export default function Dashboard() {
       unresolved.push(incidents.items[i]);
     }
   }
-  unresolved.sort((a: any, b: any) => {
+  unresolved.sort((a: Incident, b: Incident) => {
     const rank: Record<string, number> = { critical: 0, warning: 1, info: 2 };
     const ra = rank[a.severity] !== undefined ? rank[a.severity] : 3;
     const rb = rank[b.severity] !== undefined ? rank[b.severity] : 3;
