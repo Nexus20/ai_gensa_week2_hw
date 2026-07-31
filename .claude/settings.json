@@ -1,3 +1,22 @@
 {
-  "hooks": {}
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "command": ".claude/hooks/run-tests.sh"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "command": ".claude/hooks/block-protected.sh"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "command": ".claude/hooks/project-conventions.sh"
+      }
+    ]
+  }
 }
