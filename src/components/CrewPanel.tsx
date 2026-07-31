@@ -1,36 +1,13 @@
 import { useApiResource } from '../hooks/useApiResource';
 import type { CrewResponse, CrewMember } from '../api/types';
+import { PanelLoading, PanelError } from './PanelStates';
 
 export default function CrewPanel() {
   const { data, loading, error, retry } = useApiResource<CrewResponse>('crew');
 
-  if (loading) {
-    return (
-      <section className="panel">
-        <h2>Crew</h2>
-        <div className="panel-loading">
-          <div className="spinner" />
-          <p>Loading crew roster…</p>
-        </div>
-      </section>
-    );
-  }
-
-  if (error) {
-    return (
-      <section className="panel">
-        <h2>Crew</h2>
-        <div className="panel-error">
-          <p>⚠ {error}</p>
-          <button onClick={retry}>Retry</button>
-        </div>
-      </section>
-    );
-  }
-
-  if (!data) {
-    return null;
-  }
+  if (loading) return <PanelLoading title="Crew" message="Loading crew roster…" />;
+  if (error) return <PanelError title="Crew" error={error} onRetry={retry} />;
+  if (!data) return null;
 
   const sorted = [...data.members].sort((a: CrewMember, b: CrewMember) => {
     if (a.onDuty !== b.onDuty) return a.onDuty ? -1 : 1;

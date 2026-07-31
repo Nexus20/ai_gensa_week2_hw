@@ -2,46 +2,18 @@ import { useState } from 'react';
 import { useApiResource } from '../hooks/useApiResource';
 import type { TelemetryResponse } from '../api/types';
 import {
-  O2_CRITICAL,
-  SPARKLINE_MAX_POINTS,
-  SPARKLINE_WIDTH,
-  SPARKLINE_HEIGHT,
-  COLOR_CRITICAL,
-  COLOR_ACCENT,
+  O2_CRITICAL, SPARKLINE_MAX_POINTS, SPARKLINE_WIDTH, SPARKLINE_HEIGHT, COLOR_CRITICAL, COLOR_ACCENT,
 } from '../config';
 import { downsampleTelemetry } from '../domain/telemetry';
+import { PanelLoading, PanelError } from './PanelStates';
 
 export default function TelemetryChart() {
   const { data, loading, error, retry } = useApiResource<TelemetryResponse>('telemetry');
   const [selected, setSelected] = useState('o2');
 
-  if (loading) {
-    return (
-      <section className="panel">
-        <h2>Telemetry</h2>
-        <div className="panel-loading">
-          <div className="spinner" />
-          <p>Loading telemetry…</p>
-        </div>
-      </section>
-    );
-  }
-
-  if (error) {
-    return (
-      <section className="panel">
-        <h2>Telemetry</h2>
-        <div className="panel-error">
-          <p>⚠ {error}</p>
-          <button onClick={retry}>Retry</button>
-        </div>
-      </section>
-    );
-  }
-
-  if (!data) {
-    return null;
-  }
+  if (loading) return <PanelLoading title="Telemetry" message="Loading telemetry…" />;
+  if (error) return <PanelError title="Telemetry" error={error} onRetry={retry} />;
+  if (!data) return null;
 
   const series = data.series[selected as keyof typeof data.series];
   const points = downsampleTelemetry(series.points, SPARKLINE_MAX_POINTS);
@@ -49,13 +21,11 @@ export default function TelemetryChart() {
   const min = Math.min(...points);
   const max = Math.max(...points);
   const range = max - min || 1;
-  const w = SPARKLINE_WIDTH;
-  const h = SPARKLINE_HEIGHT;
-  const step = w / (points.length - 1);
+  const step = SPARKLINE_WIDTH / (points.length - 1);
   const coords = points
     .map((p: number, i: number) => {
       const x = (i * step).toFixed(1);
-      const y = (h - ((p - min) / range) * (h - 8) - 4).toFixed(1);
+      const y = (SPARKLINE_HEIGHT - ((p - min) / range) * (SPARKLINE_HEIGHT - 8) - 4).toFixed(1);
       return x + ',' + y;
     })
     .join(' ');
@@ -78,13 +48,11 @@ export default function TelemetryChart() {
         ))}
       </div>
       <div className="chart-body">
-        <svg viewBox={'0 0 ' + w + ' ' + h} className="sparkline" preserveAspectRatio="none">
+        <svg viewBox={'0 0 ' + SPARKLINE_WIDTH + ' ' + SPARKLINE_HEIGHT} className="sparkline" preserveAspectRatio="none">
           <polyline points={coords} fill="none" stroke={breach ? COLOR_CRITICAL : COLOR_ACCENT} strokeWidth="2" />
         </svg>
         <div className="chart-stats">
-          <span>
-            latest <strong>{latest.toFixed(1)}</strong> {series.unit}
-          </span>
+          <span>latest <strong>{latest.toFixed(1)}</strong> {series.unit}</span>
           <span>min {min.toFixed(1)}</span>
           <span>max {max.toFixed(1)}</span>
           {breach && <span className="chart-breach">below floor!</span>}
