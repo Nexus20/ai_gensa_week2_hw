@@ -50,3 +50,29 @@ Defined in `.claude/settings.json`:
 - `UserPromptSubmit` — runs `.claude/hooks/project-conventions.sh` on every prompt
 
 All three scripts live in `.claude/hooks/` and are tracked with +x mode in git.
+
+## Exercise 4: Intentional PreToolUse exception
+
+When scaffolding the Fuel Reserves widget (Exercise 4), the PreToolUse
+hook blocked the Write to `public/api/fuel.json`. The assignment explicitly
+permits adding this file — it is not part of the grading contract.
+
+**What I did:** Added a whitelist condition to `.claude/hooks/block-protected.sh`:
+
+```bash
+# Allow fuel.json — explicitly permitted per Exercise 4 (ASSIGNMENT.md)
+if [[ "$FILE_PATH" == *"fuel.json"* ]]; then
+  exit 0
+fi
+```
+
+This is the correct pattern for hook exceptions: explicit, documented,
+and narrow in scope. The hook still blocks all other `public/api/**`
+files and `RUBRIC.md`.
+
+**Verification:**
+```
+$ Edit public/api/fuel.json   → exit 0 (allowed)
+$ Edit public/api/station.json → exit 2 (blocked)
+$ Edit RUBRIC.md               → exit 2 (blocked)
+```

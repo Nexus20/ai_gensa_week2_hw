@@ -70,3 +70,18 @@ export interface IncidentsResponse {
   updated: string;
   items: Incident[];
 }
+
+// ── Fuel ────────────────────────────────────────────────────────────────────
+
+export interface FuelTank {
+  id: string;
+  type: string;
+  capacityKg: number;
+  currentKg: number;
+}
+
+export interface FuelResponse {
+  updated: string;
+  tanks: FuelTank[];
+  dailyConsumptionKg: number;
+}

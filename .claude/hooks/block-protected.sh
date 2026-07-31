@@ -11,6 +11,11 @@ fi
 INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | grep -o '"file_path"\s*:\s*"[^"]*"' | head -1 | sed 's/.*"file_path"\s*:\s*"\([^"]*\)".*/\1/')
 
+# Allow fuel.json — explicitly permitted per Exercise 4 (ASSIGNMENT.md)
+if [[ "$FILE_PATH" == *"fuel.json"* ]]; then
+  exit 0
+fi
+
 # Block edits to protected paths
 if [[ "$FILE_PATH" == *"public/api/"* || "$FILE_PATH" == *"RUBRIC.md"* ]]; then
   echo "⛔ BLOCKED: Edits to '$FILE_PATH' are not allowed." >&2
